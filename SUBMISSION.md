@@ -19,6 +19,20 @@ There are two different things:
 Submit through the directory. An official-marketplace listing is a separate
 partner conversation and is not something this form guarantees.
 
+## Without a paid plan
+
+The directory requires a paid claude.ai plan. The repository also ships a
+self-hosted marketplace (`.claude-plugin/marketplace.json`), so no listing is
+needed:
+
+```text
+/plugin install prompt-history-bar --marketplace xqpmjh/prompt-history-bar
+```
+
+Verified 2026-10-28 with a throwaway config: `claude plugin marketplace add`,
+`claude plugin install`, and the plugin inventory (1 skill) all succeed from a
+local clone. `claude plugin validate . --strict` passes.
+
 ## Steps
 
 1. Create a public GitHub repo containing this plugin (repo root = this folder).

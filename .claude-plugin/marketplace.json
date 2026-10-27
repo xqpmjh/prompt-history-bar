@@ -1,0 +1,28 @@
+{
+  "name": "prompt-history-bar",
+  "description": "Status line plugins for Claude Code, starting with a right-side column of recent prompts for the current project.",
+  "owner": {
+    "name": "Hao Jin",
+    "url": "https://github.com/xqpmjh"
+  },
+  "plugins": [
+    {
+      "name": "prompt-history-bar",
+      "source": "./",
+      "description": "Show recent prompts for the current project in a right-side column of the Claude Code status line. Reads local files only (prompt history and optional paste preview); no network, hooks, or telemetry.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Hao Jin",
+        "url": "https://github.com/xqpmjh"
+      },
+      "homepage": "https://github.com/xqpmjh/prompt-history-bar",
+      "repository": "https://github.com/xqpmjh/prompt-history-bar",
+      "license": "MIT",
+      "keywords": [
+        "statusline",
+        "prompt-history",
+        "productivity"
+      ]
+    }
+  ]
+}

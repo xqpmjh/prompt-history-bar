@@ -18,12 +18,24 @@ different repository shows a different list.
 
 ## Install
 
-### From the plugin directory
+### From this repository's marketplace
 
-Once the plugin appears in the Claude Code plugin directory, install it from
-`/plugin` and follow the listing's install command. Then ask Claude to run the
-`prompt-history-bar` skill (`/prompt-history-bar`); the skill locates its own
-installer and runs it after you confirm.
+The repository is its own plugin marketplace, so installing does not depend on
+the Claude plugin directory:
+
+```text
+/plugin install prompt-history-bar --marketplace xqpmjh/prompt-history-bar
+```
+
+Or add the marketplace once, then install from `/plugin`:
+
+```text
+/plugin marketplace add xqpmjh/prompt-history-bar
+/plugin install prompt-history-bar@prompt-history-bar
+```
+
+Start a new Claude Code session, then run `/prompt-history-bar`. The skill
+locates its own installer and asks for confirmation before editing settings.
 
 ### As a personal skill
 
@@ -164,6 +176,14 @@ MIT. See [LICENSE](LICENSE).
 
 这个状态栏在右侧显示**当前项目**最近输入的几条 prompt，最新的在最下面，
 带相对时间。左侧保留项目/分支、模型、effort、上下文预算。
+
+在 Claude Code 里直接装（本仓库自带 marketplace，不需要目录收录）：
+
+```text
+/plugin install prompt-history-bar --marketplace xqpmjh/prompt-history-bar
+```
+
+装完开新会话，运行 `/prompt-history-bar`，技能会帮你装状态栏。想手动复制技能：
 
 ```bash
 git clone https://github.com/xqpmjh/prompt-history-bar.git
