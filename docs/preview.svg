@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="190" viewBox="0 0 1160 190" role="img" aria-label="Prompt History Bar preview">
+  <rect width="1160" height="190" rx="8" fill="#1e1e1e"/>
+  <rect width="1160" height="30" rx="8" fill="#2d2d2d"/>
+  <rect y="22" width="1160" height="8" fill="#2d2d2d"/>
+  <circle cx="18" cy="15" r="5" fill="#ff5f57"/>
+  <circle cx="36" cy="15" r="5" fill="#febc2e"/>
+  <circle cx="54" cy="15" r="5" fill="#28c840"/>
+  <text x="580" y="19" fill="#9a9a9a" font-family="Menlo, Monaco, Consolas, monospace" font-size="11" text-anchor="middle">Claude Code</text>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="12.5" fill="#d4d4d4">
+    <text x="24" y="62">[main] ~/projects/api</text>
+    <text x="24" y="90">Opus 5.5</text>
+    <text x="24" y="118">effort:high</text>
+    <text x="24" y="146">compact:48.2k/300k (16%)</text>
+  </g>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="12.5" font-style="italic" fill="#87afff">
+    <text x="330" y="62">❯ ship the release notes · 1d</text>
+    <text x="330" y="90">❯ compare retry strategies · 5h</text>
+    <text x="330" y="118">❯ update the API docs · 3h</text>
+    <text x="330" y="146">❯ fix the upload timeout · 2h</text>
+
+    <text x="740" y="62">❯ check the queue backlog · 1h</text>
+    <text x="740" y="90">❯ run the upload tests · 26m</text>
+    <text x="740" y="118">❯ why does the retry loop double-count? · 12m</text>
+    <text x="740" y="146">❯ add retry logic to the upload · 2m</text>
+  </g>
+
+  <text x="24" y="176" fill="#6f6f6f" font-family="Menlo, Monaco, Consolas, monospace" font-size="10.5">Recent prompts for this project, newest at the bottom right. No network, no hooks, no telemetry.</text>
+</svg>
