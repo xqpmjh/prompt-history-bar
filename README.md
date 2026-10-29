@@ -124,6 +124,18 @@ four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
 `/model`, ...), exit words, and inputs that are only paste or image
 placeholders (`[Image #N]` is dropped from entries that also have text).
 
+A transcript stored inline, without a `[Pasted text ...]` placeholder, keeps
+its command; a leading host, bracket, PowerShell, or glyph prompt is stripped
+before display. A bare `$`/`%` line is left alone so ordinary text keeps its
+subject.
+
+With the paste preview on, a paste is shown by its first line. When that line
+looks like a shell prompt (`[user@host dir]$ ...`, `user@host ~ % ...`,
+`(base) user@host:~$ ...`, `PS C:\> ...`, or a Starship module line such as
+`~/proj on  main ❯ ...`), it says nothing about intent, so the cell shows
+`[paste]` next to any typed text instead. Bare `#` and `>` are not prompt
+signals, so script comments and quoted lines still preview.
+
 The right column is aligned to the terminal edge. With enough entries it uses
 two columns; if the pane is too narrow it falls back to one column, then to the
 left column alone rather than overflowing.
@@ -137,7 +149,8 @@ left column alone rather than overflowing.
   `history.jsonl` is missing. Any prompt in that directory creates entries.
 - **Prompts from a parent directory.** Intentional when the exact directory has
   no entries; up to four parents are tried.
-- **`[paste]` instead of text.** Set `CLAUDE_HISTORY_PASTE=1`.
+- **`[paste]` instead of text.** Set `CLAUDE_HISTORY_PASTE=1`. A paste whose
+  first line is a shell prompt shows `[paste]` even with the preview on.
 - **Misaligned right column.** Set `CLAUDE_HISTORY_WIDTH`, or use tmux.
 
 ## Uninstall

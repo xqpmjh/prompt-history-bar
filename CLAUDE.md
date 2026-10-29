@@ -20,25 +20,25 @@ claude plugin validate .       # manifest/skill check; passes today
   ```
 
   `CLAUDE_HISTORY_WIDTH` pins the width; `DEBUG=1` logs the width source and re-raises render exceptions instead of falling back.
-- Syntax gates live inside the suite: `python3 -m py_compile` on the three Python files and `bash -n` on the two shell scripts.
-- `claude plugin validate . --strict` currently fails on a warning that the root `CLAUDE.md` is "not loaded as plugin context". This file is developer context, not plugin content; use non-strict validation unless the packaging decision changes.
+- Syntax gates live inside the suite: `python3 -m py_compile` on the three Python files and `bash -n` on `install.sh`, `uninstall.sh`, and `tests/run-tests.sh`.
+- `claude plugin validate . --strict` currently fails on a warning that a root `CLAUDE.md` is not recognised as plugin content (it is developer context). Use non-strict validation unless the packaging decision changes.
 
 ## Architecture
 
 Two entry points, one renderer, one settings writer.
 
-`statusline.py` is what Claude Code runs on every refresh: stdin JSON → `build_left` → `history_bar.render_statusline` → stdout. `history_bar.py` also runs standalone as a one-line tmux status bar (`history_bar.py <dir> [count]`, with `#` escaped). `install.sh` is the only thing that writes installation state: it copies the four scripts into `$CLAUDE_CONFIG_DIR/statusline/prompt-history-bar/` and has `settings_helper.py` put the command into `settings.json`.
+`statusline.py` is what Claude Code runs on every refresh: stdin JSON → `build_left` → `history_bar.render_statusline` → stdout. `history_bar.py` also runs standalone as a one-line tmux status bar (`history_bar.py <dir> [count]`, with `#` escaped). `install.sh` and `uninstall.sh` are the only things that write installation state: `install.sh` copies the four scripts into `$CLAUDE_CONFIG_DIR/statusline/prompt-history-bar/` and has `settings_helper.py` put the command into `settings.json`; `uninstall.sh` removes it through the same helper.
 
 Invariants worth preserving:
 
 - **The status line must never fail visibly or overflow.** `statusline.py` catches any render exception and prints the left rows alone (`DEBUG=1` re-raises). Every layout branch clamps to the pane width; CJK cells count as 2 (`east_asian_width`).
 - **History scanning must stay incremental.** `history.jsonl` grows without bound and is read on every refresh. `scan_back` reads 64 KiB blocks from the end and stops once the first candidate directory has `rows * 2` entries. Do not load or sort the whole file.
 - **Project matching is tolerant by design.** Candidates are the logical path and its realpath, each walked up four parents without going above `$HOME`; the first directory with entries wins. Symlinked workspaces depend on the realpath leg.
-- **Filtering is what keeps the bar useful.** `is_noise` drops bash inputs (`!...`), UI-only slash commands (`UI_CMDS`), bare `/resume` and `/`, `exit`/`quit`, and inputs that are only paste/image placeholders. Skill commands stay: they are user intent. When Claude Code gains a settings-only command, add it to `UI_CMDS` or `BARE_ONLY_UI`.
-- **Paste preview is opt-in.** History stores small pastes inline in `pastedContents[N].content`, large ones only as `contentHash` pointing at `<config>/paste-cache/<hash>.txt`. Without `CLAUDE_HISTORY_PASTE=1` the bar prints `[paste]` and never opens the cache.
+- **Filtering is what keeps the bar useful.** `is_noise` drops bash inputs (`!...`), UI-only slash commands (`UI_CMDS`), bare `/resume` and `/`, `exit`/`quit`, inputs that are only paste/image placeholders, and displays that are only a prompt. Skill commands stay: they are user intent. An inline-pasted transcript keeps its command, with a strong leading prompt stripped in `build` via `prompt_prefix_end` (bare `$`/`%` would eat prose). When Claude Code gains a settings-only command, add it to `UI_CMDS` or `BARE_ONLY_UI`.
+- **Paste preview is opt-in.** History stores small pastes inline in `pastedContents[N].content`, large ones only as `contentHash` pointing at `<config>/paste-cache/<hash>.txt`. Without `CLAUDE_HISTORY_PASTE=1` the bar prints `[paste]` and never opens the cache. With it on, the preview is the paste's first line unless the line matches `PROMPT` (host/bracket prompts, `$`/`%`, `hostname%`, PowerShell/cmd, `(venv)` prefixes) or `STARSHIP` (a `dir on branch ❯` module line); bare `#` and `>` are deliberately not prompt signals. The cache is read with `errors="replace"` so one bad byte cannot blank the column.
 - **Width comes from a fallback chain**, because the status line JSON has no terminal size: `CLAUDE_HISTORY_WIDTH` → tmux (`TMUX_PANE`) → `COLUMNS` → `/dev/tty` ioctl → per-session cached width → 120. Cache and debug log live in `${TMPDIR}/claude-history-bar-<uid>` (mode 0700).
 
-Layout: the left column is capped at `max(16, min(45, width // 3))`. The history column is right-aligned to the pane edge, uses two columns only when there are more entries than left rows and each column is at least 32 cells (max 60, gap 6), then one column, then the left rows alone below 12 cells.
+Layout: the left column is capped at `max(16, min(45, width // 3))`. The history column is right-aligned to the pane edge, uses two columns only when there are more entries than left rows and each column is at least 32 cells (max 60, gap 6), then one column, then the left rows alone below 12 cells. When the two-column layout is rejected, the one-column fallback keeps the newest entries.
 
 `settings_helper.py` splices only the `statusLine` key in the raw text so the user's formatting survives, re-parses the result, and refuses to write if any other key changed. It backs up to `settings.json.bak.<stamp>` and is idempotent when the command is unchanged. Exit codes: 2 usage, 3 conflict (needs `--force`), 4 invalid settings. `uninstall.sh` removes only that key; `--purge` sends the runtime copy to `trash` when available.
 
@@ -55,6 +55,6 @@ The status line runs the installed copy, so an edit in this repository has no ef
 ```
 
 - This user's installed `statusLine` uses `CLAUDE_HISTORY_PASTE=1` and `CLAUDE_HISTORY_LANG=zh`; keep both flags so a reinstall does not change the configuration. Re-running the installer is idempotent for `settings.json` and only refreshes the runtime files. Use `--force` only if the installer reports an existing `statusLine` it will not replace.
-- No restart is needed: Claude Code starts the status line command on each refresh, so the next refresh picks up the new files.
+- Reinstalling with the same `statusLine` command needs no restart: Claude Code starts the status line command on each refresh, so the next refresh picks up the new files. A first install, which adds the `statusLine` key, still needs a new session or a settings reload.
 - Changes that touch only `README.md`, `SKILL.md` or `tests/` do not need a reinstall.
 - To check for drift: `cmp skills/prompt-history-bar/scripts/history_bar.py ~/.claude/statusline/prompt-history-bar/history_bar.py` (and likewise for the other runtime files).

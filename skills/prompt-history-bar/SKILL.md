@@ -53,6 +53,12 @@ Without `--force`, the installer refuses to overwrite an existing `statusLine`
 that points somewhere else. Every write is backed up as
 `settings.json.bak.YYYYMMDD-HHMMSS` and validated before it replaces the file.
 
+Re-running the installer with different flags builds a different `statusLine`
+command, which the helper treats as a conflict and refuses without `--force`.
+To refresh the runtime files only, repeat the flags from the original install
+(for example `--lang zh --paste`). To change them deliberately, pass the new
+flags together with `--force`; the settings file is backed up first.
+
 After installing, start a new Claude Code session or reload settings. The status
 line is skipped until the workspace trust prompt is accepted.
 
@@ -87,7 +93,9 @@ running elsewhere.
 - **Prompts from a parent directory appear.** That is intentional: if the exact
   directory has no entries, up to four parent directories are tried.
 - **Pasted text shows `[paste]`.** Enable the preview with
-  `CLAUDE_HISTORY_PASTE=1`. An input that is only a paste is not listed at all.
+  `CLAUDE_HISTORY_PASTE=1`. An input that is only a paste is not listed at all,
+  and a paste whose first line is a shell prompt stays `[paste]` even with the
+  preview on.
 - **Uninstall.** Run
   `~/.claude/statusline/prompt-history-bar/uninstall.sh [--purge]`, or
   `install.sh --uninstall --purge` from the skill directory.
@@ -113,6 +121,18 @@ It accepts both the logical project path and its realpath, tries parents up to
 four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
 `/model`, ...), exit words, and inputs that are only paste or image
 placeholders (`[Image #N]` is dropped from entries that also have text).
+
+A transcript stored inline, without a `[Pasted text ...]` placeholder, keeps
+its command; a leading host, bracket, PowerShell, or glyph prompt is stripped
+before display. A bare `$`/`%` line is left alone so ordinary text keeps its
+subject.
+
+With the paste preview on, a paste is shown by its first line. When that line
+looks like a shell prompt (`[user@host dir]$ ...`, `user@host ~ % ...`,
+`(base) user@host:~$ ...`, `PS C:\> ...`, or a Starship module line such as
+`~/proj on  main ❯ ...`), it says nothing about intent, so the cell shows
+`[paste]` next to any typed text instead. Bare `#` and `>` are not prompt
+signals, so script comments and quoted lines still preview.
 
 The right column is aligned to the terminal edge. With enough entries it uses
 two columns; if the pane is too narrow it falls back to one, then to the left

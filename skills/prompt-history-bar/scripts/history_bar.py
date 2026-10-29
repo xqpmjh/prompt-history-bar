@@ -41,6 +41,39 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 PASTED = re.compile(r"\[Pasted text #(\d+) \+\d+ lines\]")
 IMAGE = re.compile(r"\s*\[Image #\d+\]")
 CONTENT_HASH = re.compile(r"^[0-9a-f]{8,64}$")
+# A pasted shell transcript starts with the prompt line, which says nothing
+# about intent. Common shapes: [user@host dir]$ cmd, user@host:~/p$ cmd,
+# (venv) host:~$ cmd, $ cmd, hostname% cmd, PS C:\> cmd, C:\> cmd, and the
+# Starship/powerline glyph prompts.
+_ENV_PREFIX = r"(?:\([^)\s]{1,24}\)\s*)*"          # (base) (venv) prefixes
+_ENV_ONE = r"(?:\([^)\s]{1,24}\)\s*)+"
+_STRONG_PROMPT = (
+    r"(?:"
+    r"\[[^\]\s]+@[^\]]*\]\s*[#$%>]"                # [user@host dir]$
+    r"|[\w.-]+@[\w.-]+(?::[^\s$#%>]*)?(?:\s+[^\s$#%>]+)*\s*[#$%>]"
+    r"|(?:bash|sh|zsh|fish|dash)[-\d.]*\s*[#$]"
+    r"|PS(?: [A-Za-z]:\\[^>]*)?>"
+    r"|[A-Za-z]:\\[^>]*>"                          # C:\dir>
+    r"|(?:➜|❯)\s"
+    r")"
+)
+PROMPT = re.compile(
+    r"^(?:" + _ENV_PREFIX + r"(?:" + _STRONG_PROMPT +
+    r"|[$%](?:\s|$)"                               # weak: $ cmd, % cmd
+    r"|[A-Za-z][\w.-]*%(?:\s|$)"                   # weak: hostname%
+    r"|(?:λ|→)\s"                                  # weak glyphs
+    r"))"
+)
+# Strong shapes plus an environment prefix: an inline display is the user's own
+# prompt text, so weak signals would eat its subject (`CPU% is high`).
+PROMPT_TRANSCRIPT = re.compile(
+    r"^(?:" + _ENV_ONE + r"(?:" + _STRONG_PROMPT + r"|[$%](?:\s|$))"
+    r"|" + _STRONG_PROMPT + r")"
+)
+# Starship and powerline prompts put the glyph at the end of a module line
+# (`~/proj on  main ❯ cmd`), not at the start, so the glyph alone is not enough:
+# a typed sentence can quote it too. Only a Starship-shaped head counts.
+STARSHIP = re.compile(r"^[^\s]+ on\s+(?:[^\s❯➜]+\s+)*(?:➜|❯)\s")
 
 META_WORDS = {"exit", "quit"}
 # Built-ins that only change the UI or session state; their arguments are
@@ -91,11 +124,29 @@ def clean(text):
     return " ".join(text.split())
 
 
+def prompt_prefix_end(text):
+    """End offset of a transcript's leading prompt in `text`, or 0.
+
+    Only strong shapes count: an inline display is the user's own prompt, and
+    weak signals (`CPU% is high`, `λ calculus`) are prose. Starship puts its
+    glyph after the modules, so a `dir on branch ❯` head also counts.
+    """
+    match = PROMPT_TRANSCRIPT.match(text)
+    if match:
+        return match.end()
+    match = STARSHIP.match(text)
+    if match:
+        return match.end()
+    return 0
+
+
 def paste_first_line(entry):
-    """First non-empty line of a paste, or "" when it cannot be read.
+    """First non-empty line of a paste, or "" when there is nothing to preview.
 
     history.jsonl stores small pastes in `content` and large ones only as a
     `contentHash`; the body for the latter lives in paste-cache/<hash>.txt.
+    A transcript copied from a shell opens with the prompt line, which is not
+    the user's intent, so it counts as unreadable and yields no preview.
     """
     text = ""
     if isinstance(entry, dict):
@@ -104,14 +155,16 @@ def paste_first_line(entry):
             digest = entry.get("contentHash")
             if isinstance(digest, str) and CONTENT_HASH.match(digest):
                 try:
-                    with open(os.path.join(PASTE_CACHE, digest + ".txt")) as fh:
+                    with open(os.path.join(PASTE_CACHE, digest + ".txt"),
+                              encoding="utf-8", errors="replace") as fh:
                         text = fh.read(4096)
                 except OSError:
                     return ""
     for line in text.splitlines():
         line = clean(line)
-        if line:
-            return line
+        if not line:
+            continue
+        return "" if PROMPT.match(line) or STARSHIP.match(line) else line
     return ""
 
 
@@ -128,7 +181,7 @@ def display_text(obj):
 
     def sub(match):
         line = paste_first_line(pastes.get(match.group(1)))
-        return "» " + line if line else match.group(0)
+        return "» " + line if line else "[paste]"
 
     return PASTED.sub(sub, raw)
 
@@ -140,7 +193,12 @@ def is_noise(display):
     a shell prompt and shows no intent. With accompanying text it stays; the
     image placeholder is dropped in display_text()."""
     text = clean(str(display or ""))
-    if not clean(IMAGE.sub("", PASTED.sub("", text))):
+    stripped = clean(IMAGE.sub("", PASTED.sub("", text)))
+    if not stripped:
+        return True
+    # A display that is only a prompt line carries no intent either.
+    match = PROMPT.match(stripped) or STARSHIP.match(stripped)
+    if match and not stripped[match.end():].strip():
         return True
     if text.startswith("!"):
         return True
@@ -247,6 +305,11 @@ def build(entries, total=SEG_WIDTH):
         if is_noise(obj.get("display")):
             continue
         text = clean(display_text(obj))
+        # A transcript pasted inline (no `[Pasted text ...]` placeholder) keeps
+        # its prompt line; the command is the useful part, the prompt is not.
+        end = prompt_prefix_end(text)
+        if end:
+            text = text[end:].lstrip()
         if not text:
             continue
         age = rel_age(obj.get("timestamp"))
@@ -474,6 +537,10 @@ def render_statusline(lefts, project):
 
     segs = build(entries, col_w)
     segs.reverse()  # oldest first, newest at the bottom
+    if not two_col:
+        # One column holds `rows` entries; keep the newest after entries that
+        # render empty (prompt-only displays) have been dropped.
+        segs = segs[-rows:]
     col1 = segs[:rows]
     col2 = segs[rows:rows * 2] if two_col else []
     start = width - (col_w * 2 + COL_GAP if two_col else col_w)
