@@ -121,7 +121,8 @@ rows, and calls `history_bar.render_statusline`. The history reader scans
 entries for the current project, so cost does not grow with the file size. It
 matches both the logical project path and its realpath, tries parents up to
 four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
-`/model`, ...), and exit words.
+`/model`, ...), exit words, and inputs that are only paste or image
+placeholders (`[Image #N]` is dropped from entries that also have text).
 
 The right column is aligned to the terminal edge. With enough entries it uses
 two columns; if the pane is too narrow it falls back to one column, then to the

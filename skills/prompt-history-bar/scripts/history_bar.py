@@ -39,6 +39,7 @@ UP_LEVELS = 4
 MIN_TWO_COL = 32
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 PASTED = re.compile(r"\[Pasted text #(\d+) \+\d+ lines\]")
+IMAGE = re.compile(r"\s*\[Image #\d+\]")
 CONTENT_HASH = re.compile(r"^[0-9a-f]{8,64}$")
 
 META_WORDS = {"exit", "quit"}
@@ -115,8 +116,10 @@ def paste_first_line(entry):
 
 
 def display_text(obj):
-    """Replace `[Pasted text #N +M lines]` with a paste preview or "[paste]"."""
-    raw = str(obj.get("display") or "")
+    """Replace `[Pasted text #N +M lines]` with a paste preview or "[paste]".
+
+    `[Image #N]` placeholders are dropped; only the accompanying text stays."""
+    raw = IMAGE.sub("", str(obj.get("display") or ""))
     if "[Pasted text" not in raw:
         return raw
     if not PASTE_ENABLED:
@@ -132,9 +135,12 @@ def display_text(obj):
 
 def is_noise(display):
     """Bash-mode inputs (`!...`), UI settings commands, and exit words are not
-    conversation content and do not take a history slot."""
+    conversation content and do not take a history slot. Neither does an input
+    that is only paste/image placeholders: a pasted command output starts with
+    a shell prompt and shows no intent. With accompanying text it stays; the
+    image placeholder is dropped in display_text()."""
     text = clean(str(display or ""))
-    if not text:
+    if not clean(IMAGE.sub("", PASTED.sub("", text))):
         return True
     if text.startswith("!"):
         return True

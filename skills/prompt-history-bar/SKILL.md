@@ -87,7 +87,7 @@ running elsewhere.
 - **Prompts from a parent directory appear.** That is intentional: if the exact
   directory has no entries, up to four parent directories are tried.
 - **Pasted text shows `[paste]`.** Enable the preview with
-  `CLAUDE_HISTORY_PASTE=1`.
+  `CLAUDE_HISTORY_PASTE=1`. An input that is only a paste is not listed at all.
 - **Uninstall.** Run
   `~/.claude/statusline/prompt-history-bar/uninstall.sh [--purge]`, or
   `install.sh --uninstall --purge` from the skill directory.
@@ -111,7 +111,8 @@ and calls `history_bar.render_statusline`. The history reader scans
 entries for the current project, so its cost does not grow with the file size.
 It accepts both the logical project path and its realpath, tries parents up to
 four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
-`/model`, ...), and exit words.
+`/model`, ...), exit words, and inputs that are only paste or image
+placeholders (`[Image #N]` is dropped from entries that also have text).
 
 The right column is aligned to the terminal edge. With enough entries it uses
 two columns; if the pane is too narrow it falls back to one, then to the left

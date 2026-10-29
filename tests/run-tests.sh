@@ -34,9 +34,11 @@ path, proj, other, digest = sys.argv[1:5]
 now = int(time.time() * 1000)
 rows = [
     (other, "other project prompt", {}),
-    (proj, "first prompt in project", {}),
     (proj, "second prompt: 中文测试 with a longer tail", {}),
-    (proj, "[Pasted text #1 +2 lines]", {"1": {"contentHash": digest}}),
+    (proj, "[Pasted text #1 +2 lines] why does this fail", {"1": {"contentHash": digest}}),
+    (proj, "[Pasted text #2 +2 lines]", {"2": {"contentHash": digest}}),
+    (proj, "[Image #1]", {}),
+    (proj, "[Image #2] check the layout", {}),
     (proj, "newest prompt", {}),
 ]
 with open(path, "w", encoding="utf-8") as fh:
@@ -93,6 +95,12 @@ check "chinese labels with CLAUDE_HISTORY_LANG=zh" 'printf "%s" "$SAMPLE" | CLAU
 check "paste preview is off by default" 'printf "%s" "$OUT" | grep -q "\[paste\]" && ! printf "%s" "$OUT" | grep -q "secret first line"'
 PASTED_OUT="$(printf '%s' "$SAMPLE" | CLAUDE_HISTORY_WIDTH=100 CLAUDE_HISTORY_PASTE=1 python3 "$SCRIPTS/statusline.py")"
 check "paste preview shows the first line when enabled" 'printf "%s" "$PASTED_OUT" | grep -q "secret first line"'
+
+# Inputs that are only paste/image placeholders carry no intent and are skipped;
+# image placeholders are stripped from entries that also have text.
+check "paste-only and image-only inputs are skipped" '[ "$(printf "%s" "$OUT" | grep -o "why does this fail\|check the layout" | wc -l | tr -d " ")" = "2" ] && ! printf "%s" "$OUT" | grep -q "Image #"'
+check "text next to a paste still shows" 'printf "%s" "$OUT" | grep -q "why does this fail"'
+check "image placeholder is dropped, text stays" 'printf "%s" "$OUT" | grep -q "check the layout"'
 
 # No matching history: left column only.
 NOHIST="$WORK/nohistory"
