@@ -1,7 +1,7 @@
 {
   "name": "prompt-history-bar",
   "description": "Show recent prompts for the current project in a right-side column of the Claude Code status line. Reads local files only (prompt history and optional paste preview); no network, hooks, or telemetry.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Hao Jin",
     "url": "https://github.com/xqpmjh"
