@@ -14,7 +14,8 @@ effort level, and context budget. The right side answers a different question:
 Claude Code remembers prompt history, but it is buried in the input history.
 The status line is always visible, so it is a good place for the last few
 inputs in this project. The bar is scoped to the project directory, so a
-different repository shows a different list.
+different repository shows a different list. Two sessions in the same
+directory share that list unless you install with `--session`.
 
 ## Install
 
@@ -61,6 +62,8 @@ the workspace trust prompt is accepted.
 |---|---|
 | `--lang en\|zh` | Age labels in English (default) or Chinese |
 | `--paste` | Show the first line of pasted content instead of `[paste]` |
+| `--session` | Show only the current session's prompts instead of the whole directory |
+| `--refresh N` | Also re-run the status line every N seconds (whole number, minimum 1), so the bar and its age labels update while Claude is busy or idle |
 | `--force` | Replace an existing, different `statusLine` command |
 | `--dry-run` | Print the change without writing |
 | `--uninstall` | Remove the `statusLine` entry |
@@ -86,6 +89,7 @@ Set environment variables in the shell that launches Claude Code:
 |---|---|---|
 | `CLAUDE_HISTORY_LANG` | `en` | `en` or `zh` age labels |
 | `CLAUDE_HISTORY_PASTE` | off | `1` to show the first line of pasted text |
+| `CLAUDE_HISTORY_SCOPE` | directory | `session` to list only the running session's prompts |
 | `CLAUDE_HISTORY_WIDTH` | auto | Force a width in terminal cells |
 | `CLAUDE_HISTORY_STYLE` | italic blue | ANSI style for history cells |
 | `DEBUG` | off | `1` to log width decisions |
@@ -120,9 +124,14 @@ rows, and calls `history_bar.render_statusline`. The history reader scans
 `history.jsonl` backwards in 64 KiB blocks and stops as soon as it has enough
 entries for the current project, so cost does not grow with the file size. It
 matches both the logical project path and its realpath, tries parents up to
-four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
+the git root (four levels at most; none when there is no `.git`), and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
 `/model`, ...), exit words, and inputs that are only paste or image
-placeholders (`[Image #N]` is dropped from entries that also have text).
+placeholders (`[Image #N]` is dropped from entries that also have text, along
+with the separators and invisible characters left at the front, such as the `，`
+in `[Image #1] ，说明`).
+An input that immediately repeats the previous one in the same project (for
+example a resend after a dropped connection) shows once, at its newest time;
+the same text with different pasted content stays separate.
 
 A transcript stored inline, without a `[Pasted text ...]` placeholder, keeps
 its command; a leading host, bracket, PowerShell, or glyph prompt is stripped
@@ -147,8 +156,9 @@ left column alone rather than overflowing.
   override `statusLine`.
 - **Only the left columns.** The current project has no entries yet, or
   `history.jsonl` is missing. Any prompt in that directory creates entries.
-- **Prompts from a parent directory.** Intentional when the exact directory has
-  no entries; up to four parents are tried.
+- **Prompts from a parent directory.** Intentional inside a git repository: when
+  the exact directory has no entries, parents are tried up to the git root (four
+  levels at most). A directory with no `.git` above it matches only itself.
 - **`[paste]` instead of text.** Set `CLAUDE_HISTORY_PASTE=1`. A paste whose
   first line is a shell prompt shows `[paste]` even with the preview on.
 - **Misaligned right column.** Set `CLAUDE_HISTORY_WIDTH`, or use tmux.

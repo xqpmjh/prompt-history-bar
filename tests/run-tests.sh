@@ -214,6 +214,106 @@ PY
 EMPTY_OUT="$(printf '%s' "$NOHIST_SAMPLE" | CLAUDE_HISTORY_WIDTH=100 python3 "$SCRIPTS/statusline.py")"
 check "no history still prints the four left rows" '[ "$(printf "%s\n" "$EMPTY_OUT" | wc -l | tr -d " ")" = "4" ] && printf "%s" "$EMPTY_OUT" | grep -q "effort:high" && ! printf "%s" "$EMPTY_OUT" | grep -q "❯"'
 
+# Parent fallback stops at the git root. A container directory without .git
+# (like ~/Codes) must not lend its old prompts to a new project beneath it.
+CONT="$WORK/container"
+REPO="$WORK/repo"
+mkdir -p "$CONT/newproj" "$REPO/.git" "$REPO/sub/deep"
+python3 - "$CONFIG/history.jsonl" "$CONT" "$REPO" <<'PY'
+import json
+import sys
+import time
+
+path, cont, repo = sys.argv[1:4]
+now = int(time.time() * 1000)
+with open(path, "a", encoding="utf-8") as fh:
+    for project, display in ((cont, "container old prompt"), (repo, "repo root prompt")):
+        fh.write(json.dumps({"display": display, "project": project, "sessionId": "t",
+                             "timestamp": now, "pastedContents": {}}) + "\n")
+PY
+CONT_OUT="$(python3 "$SCRIPTS/history_bar.py" "$CONT/newproj" 3)"
+check "no-git parent does not leak into a new project" '! printf "%s" "$CONT_OUT" | grep -q "container old prompt"'
+CONT_SELF="$(python3 "$SCRIPTS/history_bar.py" "$CONT" 3)"
+check "no-git directory still shows its own history" 'printf "%s" "$CONT_SELF" | grep -q "container old prompt"'
+REPO_OUT="$(python3 "$SCRIPTS/history_bar.py" "$REPO/sub/deep" 3)"
+check "git subdirectory still falls back to the repo root" 'printf "%s" "$REPO_OUT" | grep -q "repo root prompt"'
+
+# Two sessions in one directory: CLAUDE_HISTORY_SCOPE=session keeps them apart.
+SESS="$WORK/sessproj"
+mkdir -p "$SESS"
+python3 - "$CONFIG/history.jsonl" "$SESS" <<'PY'
+import json
+import sys
+import time
+
+path, proj = sys.argv[1:3]
+now = int(time.time() * 1000)
+with open(path, "a", encoding="utf-8") as fh:
+    for i, (sid, display) in enumerate((("sA", "task alpha one"), ("sB", "task beta one"),
+                                        ("sA", "task alpha two"), ("sB", "task beta two"))):
+        fh.write(json.dumps({"display": display, "project": proj, "sessionId": sid,
+                             "timestamp": now + i, "pastedContents": {}}) + "\n")
+PY
+sess_run() {  # $1 = session id, rest = env assignments
+  sid="$1"; shift
+  printf '{"session_id":"%s","workspace":{"current_dir":"%s"},"model":{"display_name":"Claude"}}' "$sid" "$SESS" \
+    | env CLAUDE_HISTORY_WIDTH=140 "$@" python3 "$SCRIPTS/statusline.py"
+}
+SESS_ALL="$(sess_run sA)"
+SESS_A="$(sess_run sA CLAUDE_HISTORY_SCOPE=session)"
+SESS_B="$(sess_run sB CLAUDE_HISTORY_SCOPE=session)"
+check "default scope shows every session in the directory" 'printf "%s" "$SESS_ALL" | grep -q "task alpha two" && printf "%s" "$SESS_ALL" | grep -q "task beta two"'
+check "session scope shows only the current session" 'printf "%s" "$SESS_A" | grep -q "task alpha two" && ! printf "%s" "$SESS_A" | grep -q "task beta"'
+check "session scope isolates the other session too" 'printf "%s" "$SESS_B" | grep -q "task beta two" && ! printf "%s" "$SESS_B" | grep -q "task alpha"'
+
+# A prompt resent after a dropped connection shows once, at its newest time.
+DUP="$WORK/dupproj"
+mkdir -p "$DUP"
+python3 - "$CONFIG/history.jsonl" "$DUP" <<'PY'
+import json
+import sys
+import time
+
+path, proj = sys.argv[1:3]
+now = int(time.time() * 1000)
+rows = [("far apart", {}), ("middle prompt", {}), ("far apart", {}),
+        ("retry me please", {}), ("retry me please", {}),
+        ("[Pasted text #1 +2 lines] go", {"1": {"id": 1, "type": "text", "content": "body A"}}),
+        ("[Pasted text #1 +2 lines] go", {"1": {"id": 1, "type": "text", "content": "body B"}})]
+with open(path, "a", encoding="utf-8") as fh:
+    for i, (display, pastes) in enumerate(rows):
+        fh.write(json.dumps({"display": display, "project": proj, "sessionId": "d1",
+                             "timestamp": now + i, "pastedContents": pastes}) + "\n")
+PY
+DUP_OUT="$(python3 "$SCRIPTS/history_bar.py" "$DUP" 10)"
+check "an adjacent repeat shows once" '[ "$(printf "%s" "$DUP_OUT" | grep -o "retry me please" | wc -l | tr -d " ")" = "1" ]'
+check "a repeat separated by another input is kept" '[ "$(printf "%s" "$DUP_OUT" | grep -o "far apart" | wc -l | tr -d " ")" = "2" ]'
+check "same placeholder with different paste content is kept" '[ "$(printf "%s" "$DUP_OUT" | grep -o "\[paste\] go" | wc -l | tr -d " ")" = "2" ]'
+
+# Dropping `[Image #N]` also drops the separators and invisible characters it
+# leaves at the front; a lone separator after an image carries no intent.
+IMG="$WORK/imgproj"
+mkdir -p "$IMG"
+python3 - "$CONFIG/history.jsonl" "$IMG" <<'PY'
+import json
+import sys
+import time
+
+path, proj = sys.argv[1:3]
+now = int(time.time() * 1000)
+rows = ["[Image #1] ，有时候因为网络中断", "[Image #2] \u200b。 only after image",
+        "[Image #3] ，", "?lead stays", "[Image #4] /resume now"]
+with open(path, "a", encoding="utf-8") as fh:
+    for i, display in enumerate(rows):
+        fh.write(json.dumps({"display": display, "project": proj, "sessionId": "i1",
+                             "timestamp": now + i, "pastedContents": {}}) + "\n")
+PY
+IMG_OUT="$(python3 "$SCRIPTS/history_bar.py" "$IMG" 10)"
+check "separators after a dropped image placeholder are trimmed" 'printf "%s" "$IMG_OUT" | grep -q "❯ 有时候因为网络中断" && printf "%s" "$IMG_OUT" | grep -q "❯ only after image"'
+check "an image followed only by punctuation is skipped" '[ "$(printf "%s" "$IMG_OUT" | grep -o "❯" | wc -l | tr -d " ")" = "4" ]'
+check "punctuation is kept when no placeholder was dropped" 'printf "%s" "$IMG_OUT" | grep -q "❯ ?lead stays"'
+check "a slash after an image is kept" 'printf "%s" "$IMG_OUT" | grep -q "❯ /resume now"'
+
 # --- install / uninstall ------------------------------------------------------
 cat > "$CONFIG/settings.json" <<'JSON'
 {
@@ -227,6 +327,7 @@ BEFORE="$(shasum "$CONFIG/settings.json" | awk '{print $1}')"
 bash "$SCRIPTS/install.sh" --dry-run --lang zh >/dev/null
 check "dry-run does not change settings" '[ "$(shasum "$CONFIG/settings.json" | awk "{print \$1}")" = "$BEFORE" ]'
 
+check "--session adds the scope flag" 'bash "$SCRIPTS/install.sh" --dry-run --session | grep -q "CLAUDE_HISTORY_SCOPE=session"'
 bash "$SCRIPTS/install.sh" --lang zh --paste >/dev/null
 check "install sets statusLine" 'python3 -c "
 import json,sys
@@ -249,6 +350,28 @@ check "installed runtime renders history" 'printf "%s" "$INSTALLED_OUT" | grep -
 AFTER="$(shasum "$CONFIG/settings.json" | awk '{print $1}')"
 bash "$SCRIPTS/install.sh" --lang zh --paste >/dev/null
 check "reinstall is a no-op" '[ "$(shasum "$CONFIG/settings.json" | awk "{print \$1}")" = "$AFTER" ]'
+
+# --refresh writes refreshInterval next to the command.
+check "--refresh shows in dry-run" 'bash "$SCRIPTS/install.sh" --dry-run --lang zh --paste --refresh 10 | grep -q "refreshInterval: 10"'
+check "--refresh rejects non-numbers" '! bash "$SCRIPTS/install.sh" --dry-run --refresh abc >/dev/null 2>&1'
+check "--refresh rejects 0" '! bash "$SCRIPTS/install.sh" --dry-run --refresh 0 >/dev/null 2>&1'
+bash "$SCRIPTS/install.sh" --lang zh --paste --refresh 10 >/dev/null
+check "--refresh sets refreshInterval without --force" 'python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d[\"statusLine\"][\"refreshInterval\"]==10
+assert \"CLAUDE_HISTORY_LANG=zh\" in d[\"statusLine\"][\"command\"]
+assert d[\"model\"]==\"sonnet\"
+" "$CONFIG/settings.json"'
+AFTER_R="$(shasum "$CONFIG/settings.json" | awk '{print $1}')"
+bash "$SCRIPTS/install.sh" --lang zh --paste --refresh 10 >/dev/null
+check "reinstall with --refresh is a no-op" '[ "$(shasum "$CONFIG/settings.json" | awk "{print \$1}")" = "$AFTER_R" ]'
+bash "$SCRIPTS/install.sh" --lang zh --paste >/dev/null
+check "dropping --refresh removes refreshInterval" 'python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert \"refreshInterval\" not in d[\"statusLine\"]
+" "$CONFIG/settings.json"'
 
 # Replacing an existing statusLine (the local migration path).
 python3 - "$CONFIG/settings.json" <<'PY'

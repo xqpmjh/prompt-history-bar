@@ -122,16 +122,15 @@ def find_top_level(text, key):
     return None
 
 
-def block(indent, command):
+def block(indent, entry):
     pad = " " * indent
     inner = " " * (indent * 2)
-    return ('"statusLine": {\n'
-            '%s"type": "command",\n'
-            '%s"command": %s\n'
-            '%s}' % (inner, inner, json.dumps(command, ensure_ascii=False), pad))
+    lines = ["%s%s: %s" % (inner, json.dumps(k), json.dumps(v, ensure_ascii=False))
+             for k, v in entry.items()]
+    return '"statusLine": {\n' + ",\n".join(lines) + "\n" + pad + "}"
 
 
-def insert_block(raw, command):
+def insert_block(raw, entry):
     body = raw.rstrip()
     trailing = "\n" if raw.endswith("\n") else ""
     if not body.endswith("}"):
@@ -142,18 +141,18 @@ def insert_block(raw, command):
         prefix = inner + "\n"
     else:
         prefix = inner + ",\n"
-    new = prefix + " " * indent + block(indent, command) + "\n}" + trailing
+    new = prefix + " " * indent + block(indent, entry) + "\n}" + trailing
     return new
 
 
-def replace_block(raw, command):
+def replace_block(raw, entry):
     found = find_top_level(raw, "statusLine")
     if not found:
-        return insert_block(raw, command)
+        return insert_block(raw, entry)
     start, end = found
     line_start = raw.rfind("\n", 0, start) + 1
     indent = len(raw[line_start:start]) - len(raw[line_start:start].lstrip(" "))
-    new = raw[:start] + block(indent, command) + raw[end:]
+    new = raw[:start] + block(indent, entry) + raw[end:]
     return new
 
 
@@ -206,9 +205,9 @@ def write_atomic(path, text):
 def main():
     args = sys.argv[1:]
     if not args:
-        die("usage: settings_helper.py --settings PATH --command CMD [--force] [--dry-run]\n"
+        die("usage: settings_helper.py --settings PATH --command CMD [--refresh SECONDS] [--force] [--dry-run]\n"
             "       settings_helper.py --settings PATH --uninstall [--force] [--dry-run]", 2)
-    settings = command = None
+    settings = command = refresh = None
     force = dry = uninstall = False
     i = 0
     while i < len(args):
@@ -217,6 +216,10 @@ def main():
             settings = args[i + 1]; i += 2
         elif a == "--command" and i + 1 < len(args):
             command = args[i + 1]; i += 2
+        elif a == "--refresh" and i + 1 < len(args):
+            if not args[i + 1].isdigit() or int(args[i + 1]) < 1:
+                die("--refresh needs a whole number of seconds >= 1", 2)
+            refresh = int(args[i + 1]); i += 2
         elif a == "--force":
             force = True; i += 1
         elif a == "--dry-run":
@@ -262,26 +265,35 @@ def main():
 
     if not command:
         die("--command is required (or use --uninstall)", 2)
-    if old_cmd == command:
+    # Same command: keep the user's other statusLine keys (such as padding).
+    # refreshInterval follows the flag, so reinstalling without --refresh clears it.
+    entry = dict(old) if isinstance(old, dict) and old_cmd == command else {}
+    entry["type"] = "command"
+    entry["command"] = command
+    entry.pop("refreshInterval", None)
+    if refresh:
+        entry["refreshInterval"] = refresh
+    if old == entry:
         print("statusLine is already set to this command; no change")
         return
-    if old_cmd and not force:
+    if old_cmd and old_cmd != command and not force:
         print("statusLine already points to a different command:\n  %s" % old_cmd,
               file=sys.stderr)
         print("re-run with --force to replace it (a backup is kept)", file=sys.stderr)
         sys.exit(3)
 
     if old is None:
-        new = insert_block(raw, command)
+        new = insert_block(raw, entry)
     else:
-        new = replace_block(raw, command)
+        new = replace_block(raw, entry)
     check = json.loads(new)
     if {k: v for k, v in check.items() if k != "statusLine"} != \
        {k: v for k, v in data.items() if k != "statusLine"}:
         die("refusing to write: adding statusLine changed other settings")
 
     if dry:
-        print("would set statusLine in %s:\n  %s" % (settings, command))
+        print("would set statusLine in %s:\n  %s%s" % (
+            settings, command, "\n  refreshInterval: %d" % refresh if refresh else ""))
         return
     if os.path.exists(settings):
         dest = backup(settings)

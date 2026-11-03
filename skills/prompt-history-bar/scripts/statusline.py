@@ -115,7 +115,7 @@ def main():
                    or os.getcwd())
     lefts = build_left(payload)
     try:
-        history_bar.render_statusline(lefts, project)
+        history_bar.render_statusline(lefts, project, payload.get("session_id"))
     except Exception:
         # A status line must never fail visibly; show the left column instead.
         if os.environ.get("DEBUG"):

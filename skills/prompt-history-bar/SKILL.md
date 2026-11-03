@@ -44,6 +44,8 @@ Options:
 |---|---|
 | `--lang en\|zh` | Age labels in English (default) or Chinese |
 | `--paste` | Show the first line of pasted content instead of `[paste]` |
+| `--session` | Show only the current session's prompts instead of the whole directory |
+| `--refresh N` | Also re-run the status line every N seconds (whole number, minimum 1), so the bar and its age labels update while Claude is busy or idle |
 | `--force` | Replace a different existing `statusLine` command (backup kept) |
 | `--dry-run` | Print the change; write nothing |
 | `--uninstall` | Remove the `statusLine` entry |
@@ -71,6 +73,7 @@ Set these in the environment that launches Claude Code (for example
 |---|---|
 | `CLAUDE_HISTORY_LANG` | `en` (default) or `zh` |
 | `CLAUDE_HISTORY_PASTE` | `1` to show the first line of pasted content |
+| `CLAUDE_HISTORY_SCOPE` | `session` to list only the running session's prompts (default: whole directory) |
 | `CLAUDE_HISTORY_WIDTH` | Force a terminal width in cells |
 | `CLAUDE_HISTORY_STYLE` | ANSI style for the history cells |
 | `DEBUG` | `1` to log width decisions under the state directory |
@@ -90,8 +93,10 @@ running elsewhere.
   `history.jsonl`, or the file is missing. Visiting a project creates entries.
 - **The right column is misaligned.** Width detection failed. Set
   `CLAUDE_HISTORY_WIDTH`, or run Claude Code inside tmux.
-- **Prompts from a parent directory appear.** That is intentional: if the exact
-  directory has no entries, up to four parent directories are tried.
+- **Prompts from a parent directory appear.** That is intentional inside a git
+  repository: if the exact directory has no entries, parents are tried up to the
+  git root (four levels at most). Without a `.git` above it, only the exact
+  directory is matched.
 - **Pasted text shows `[paste]`.** Enable the preview with
   `CLAUDE_HISTORY_PASTE=1`. An input that is only a paste is not listed at all,
   and a paste whose first line is a shell prompt stays `[paste]` even with the
@@ -118,9 +123,14 @@ and calls `history_bar.render_statusline`. The history reader scans
 `history.jsonl` backwards in 64 KiB blocks and stops as soon as it has enough
 entries for the current project, so its cost does not grow with the file size.
 It accepts both the logical project path and its realpath, tries parents up to
-four levels, and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
+the git root (four levels at most; none when there is no `.git`), and ignores bash-mode inputs (`!...`), UI commands (`/effort`,
 `/model`, ...), exit words, and inputs that are only paste or image
-placeholders (`[Image #N]` is dropped from entries that also have text).
+placeholders (`[Image #N]` is dropped from entries that also have text, along
+with the separators and invisible characters left at the front, such as the `，`
+in `[Image #1] ，说明`).
+An input that immediately repeats the previous one in the same project (for
+example a resend after a dropped connection) shows once, at its newest time;
+the same text with different pasted content stays separate.
 
 A transcript stored inline, without a `[Pasted text ...]` placeholder, keeps
 its command; a leading host, bracket, PowerShell, or glyph prompt is stripped

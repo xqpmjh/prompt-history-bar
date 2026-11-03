@@ -10,6 +10,8 @@ HELPER="$SCRIPT_DIR/settings_helper.py"
 
 LANG_OPT="en"
 PASTE_OPT=0
+SESSION_OPT=0
+REFRESH_OPT=0
 FORCE=0
 DRY=0
 UNINSTALL=0
@@ -23,6 +25,8 @@ Usage: install.sh [options]
 
   --lang en|zh   Label language for ages (default: en)
   --paste        Show the first line of pasted content (default: off)
+  --session      Show only the current session's prompts (default: whole directory)
+  --refresh N    Also re-run the status line every N seconds (default: events only)
   --force        Replace an existing statusLine command (a backup is kept)
   --dry-run      Print the change without writing files
   --uninstall    Remove the statusLine entry installed by this tool
@@ -43,6 +47,12 @@ while [ $# -gt 0 ]; do
     --lang=*)
       LANG_OPT="${1#*=}"; shift ;;
     --paste) PASTE_OPT=1; shift ;;
+    --session) SESSION_OPT=1; shift ;;
+    --refresh)
+      [ $# -ge 2 ] || { echo "--refresh needs a value" >&2; exit 2; }
+      REFRESH_OPT="$2"; shift 2 ;;
+    --refresh=*)
+      REFRESH_OPT="${1#*=}"; shift ;;
     --force) FORCE=1; shift ;;
     --dry-run) DRY=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -57,6 +67,11 @@ case "$LANG_OPT" in
   *) echo "--lang must be en or zh" >&2; exit 2 ;;
 esac
 
+case "$REFRESH_OPT" in
+  0) ;;
+  ''|*[!0-9]*|0[0-9]*) echo "--refresh must be a whole number of seconds >= 1" >&2; exit 2 ;;
+esac
+
 PYTHON="$(command -v python3 || true)"
 if [ -z "$PYTHON" ]; then
   echo "python3 was not found in PATH" >&2
@@ -69,6 +84,8 @@ if [ ! -f "$HELPER" ]; then
 fi
 
 HELPER_ARGS=(--settings "$SETTINGS")
+COMMAND_ARGS=()
+[ "$REFRESH_OPT" != "0" ] && COMMAND_ARGS+=(--refresh "$REFRESH_OPT")
 [ "$FORCE" = "1" ] && HELPER_ARGS+=(--force)
 [ "$DRY" = "1" ] && HELPER_ARGS+=(--dry-run)
 
@@ -100,23 +117,25 @@ for f in statusline.py history_bar.py; do
   fi
 done
 
-COMMAND="$("$PYTHON" - "$PYTHON" "$RUNTIME_DIR/statusline.py" "$LANG_OPT" "$PASTE_OPT" <<'PY'
+COMMAND="$("$PYTHON" - "$PYTHON" "$RUNTIME_DIR/statusline.py" "$LANG_OPT" "$PASTE_OPT" "$SESSION_OPT" <<'PY'
 import shlex
 import sys
 
-python, script, lang, paste = sys.argv[1:5]
+python, script, lang, paste, session = sys.argv[1:6]
 cmd = "%s %s" % (shlex.quote(python), shlex.quote(script))
 if lang != "en":
     cmd = "CLAUDE_HISTORY_LANG=%s %s" % (shlex.quote(lang), cmd)
 if paste == "1":
     cmd = "CLAUDE_HISTORY_PASTE=1 " + cmd
+if session == "1":
+    cmd = "CLAUDE_HISTORY_SCOPE=session " + cmd
 print(cmd)
 PY
 )"
 
 if [ "$DRY" = "1" ]; then
   echo "would install runtime to: $RUNTIME_DIR"
-  "$PYTHON" "$HELPER" "${HELPER_ARGS[@]}" --command "$COMMAND"
+  "$PYTHON" "$HELPER" "${HELPER_ARGS[@]}" --command "$COMMAND" ${COMMAND_ARGS[@]+"${COMMAND_ARGS[@]}"}
   exit $?
 fi
 
@@ -128,7 +147,7 @@ cp -f "$SCRIPT_DIR/uninstall.sh" "$RUNTIME_DIR/uninstall.sh"
 chmod 755 "$RUNTIME_DIR/statusline.py" "$RUNTIME_DIR/uninstall.sh"
 chmod 644 "$RUNTIME_DIR/history_bar.py" "$RUNTIME_DIR/settings_helper.py"
 
-"$PYTHON" "$HELPER" "${HELPER_ARGS[@]}" --command "$COMMAND"
+"$PYTHON" "$HELPER" "${HELPER_ARGS[@]}" --command "$COMMAND" ${COMMAND_ARGS[@]+"${COMMAND_ARGS[@]}"}
 
 "$PYTHON" - "$SETTINGS" <<'PY' || true
 import json

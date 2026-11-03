@@ -6,8 +6,9 @@
 
 Data source: <config>/history.jsonl, which Claude Code writes as you type.
 The file is read backwards in blocks, so cost does not grow with its size.
-If the exact project has no entries, parent directories are tried (up to four
-levels, both the logical path and its realpath).
+If the exact project has no entries, parent directories are tried up to the git
+root (at most four levels, both the logical path and its realpath). Without a
+.git above it, a directory matches only itself.
 
 Paste previews are opt-in: set CLAUDE_HISTORY_PASTE=1 to read the first line of
 pasted content from <config>/paste-cache. Otherwise a paste is shown as "[paste]".
@@ -27,6 +28,9 @@ HIST = os.path.join(CONFIG_DIR, "history.jsonl")
 PASTE_CACHE = os.path.join(CONFIG_DIR, "paste-cache")
 PASTE_ENABLED = os.environ.get("CLAUDE_HISTORY_PASTE", "").lower() in ("1", "true", "yes")
 LANG = os.environ.get("CLAUDE_HISTORY_LANG", "en").lower()
+# "session" limits the column to the prompts of the running Claude session, so
+# two sessions in one directory do not show each other's history.
+SCOPE = os.environ.get("CLAUDE_HISTORY_SCOPE", "").lower()
 if LANG not in ("en", "zh"):
     LANG = "en"
 
@@ -40,6 +44,9 @@ MIN_TWO_COL = 32
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 PASTED = re.compile(r"\[Pasted text #(\d+) \+\d+ lines\]")
 IMAGE = re.compile(r"\s*\[Image #\d+\]")
+# Separators the user typed after an image ("[Image #1] ，说明"); they only lead
+# the text once the placeholder is gone. Not "/", "@" or "#", which start commands.
+LEAD_PUNCT = frozenset("，。、；：！？,.;:!?…·-—–")
 CONTENT_HASH = re.compile(r"^[0-9a-f]{8,64}$")
 # A pasted shell transcript starts with the prompt line, which says nothing
 # about intent. Common shapes: [user@host dir]$ cmd, user@host:~/p$ cmd,
@@ -168,11 +175,24 @@ def paste_first_line(entry):
     return ""
 
 
+def drop_images(text):
+    """Remove `[Image #N]` placeholders, and with them the separators and
+    invisible characters (zero-width, NBSP, control) left leading the text."""
+    out = IMAGE.sub("", text)
+    if out == text:
+        return out
+    i = 0
+    while i < len(out) and (out[i] in LEAD_PUNCT
+                            or unicodedata.category(out[i])[0] in "ZC"):
+        i += 1
+    return out[i:]
+
+
 def display_text(obj):
     """Replace `[Pasted text #N +M lines]` with a paste preview or "[paste]".
 
     `[Image #N]` placeholders are dropped; only the accompanying text stays."""
-    raw = IMAGE.sub("", str(obj.get("display") or ""))
+    raw = drop_images(str(obj.get("display") or ""))
     if "[Pasted text" not in raw:
         return raw
     if not PASTE_ENABLED:
@@ -193,7 +213,7 @@ def is_noise(display):
     a shell prompt and shows no intent. With accompanying text it stays; the
     image placeholder is dropped in display_text()."""
     text = clean(str(display or ""))
-    stripped = clean(IMAGE.sub("", PASTED.sub("", text)))
+    stripped = clean(drop_images(PASTED.sub("", text)))
     if not stripped:
         return True
     # A display that is only a prompt line carries no intent either.
@@ -210,6 +230,23 @@ def is_noise(display):
     return words[0] in BARE_ONLY_UI and len(words) == 1
 
 
+def dedup_key(obj):
+    """Identity of an input for collapsing retries: its text plus its pastes.
+
+    A resend after a dropped connection repeats the same text, so only the
+    newest copy is shown. Two inputs that share a `[Pasted text ...]`
+    placeholder but paste different content stay apart."""
+    text = clean(drop_images(str(obj.get("display") or "")))
+    pastes = obj.get("pastedContents")
+    ids = []
+    if isinstance(pastes, dict):
+        for num in sorted(pastes, key=str):
+            entry = pastes[num]
+            if isinstance(entry, dict):
+                ids.append((str(num), str(entry.get("contentHash") or entry.get("content") or "")))
+    return text, tuple(ids)
+
+
 def rel_age(ts_ms):
     d = max(0.0, time.time() - (ts_ms or 0) / 1000.0)
     if d < 60:
@@ -221,13 +258,19 @@ def rel_age(ts_ms):
     return "%dd" % int(d // 86400)
 
 
-def scan_back(order, count):
+def scan_back(order, count, session=None):
     """One backwards pass over history.jsonl, returning {project: [entries]}.
+
+    With `session`, only entries recorded by that session are kept.
+
+    Walking newest-first, an input that repeats the entry kept just before it
+    in the same directory is skipped (see dedup_key).
 
     Stops early once the highest-priority directory has `count` entries, so
     the common case reads only the tail of the file.
     """
     found = dict((p, []) for p in order)
+    last = {}
 
     def done():
         return len(found[order[0]]) >= count
@@ -250,8 +293,12 @@ def scan_back(order, count):
                 return False
             proj = obj.get("project")
             if (proj in found and len(found[proj]) < count
+                    and (session is None or obj.get("sessionId") == session)
                     and not is_noise(obj.get("display"))):
-                found[proj].append(obj)
+                key = dedup_key(obj)
+                if last.get(proj) != key:
+                    last[proj] = key
+                    found[proj].append(obj)
             return done()
 
         while pos > 0:
@@ -270,29 +317,38 @@ def scan_back(order, count):
 
 
 def candidates(start):
-    """Candidate directories from `start` upwards.
+    """Candidate directories from `start` up to its git root.
 
     Both the logical path and its realpath are walked: Claude records the
     logical cwd, and a session started through a symlinked directory would
-    otherwise miss its own history.
+    otherwise miss its own history. Parents are only tried inside a git
+    work tree (up to the directory holding `.git`); a directory with no
+    `.git` above it matches only itself, so a new project in a container
+    folder such as ~/Codes does not inherit the container's old prompts.
     """
     home = os.path.expanduser("~")
     seen, out = set(), []
     for path in (os.path.abspath(start), os.path.realpath(start)):
+        chain, cur = [], path
         for _ in range(UP_LEVELS + 1):
-            if path not in seen:
-                seen.add(path)
-                out.append(path)
-            parent = os.path.dirname(path)
-            if parent == path or path == home:
+            chain.append(cur)
+            parent = os.path.dirname(cur)
+            if (os.path.exists(os.path.join(cur, ".git"))
+                    or parent == cur or cur == home):
                 break
-            path = parent
+            cur = parent
+        if not os.path.exists(os.path.join(chain[-1], ".git")):
+            chain = chain[:1]
+        for cur in chain:
+            if cur not in seen:
+                seen.add(cur)
+                out.append(cur)
     return out
 
 
-def collect(start, count):
+def collect(start, count, session=None):
     cands = candidates(start)
-    found = scan_back(cands, count)
+    found = scan_back(cands, count, session)
     for cand in cands:
         if found.get(cand):
             return found[cand]
@@ -501,8 +557,12 @@ def middle_elide(text, maxw):
     return head + "…" + "".join(reversed(tail))
 
 
-def render_statusline(lefts, project):
-    """Print `lefts` (one list item per row) with the history column on the right."""
+def render_statusline(lefts, project, session=None):
+    """Print `lefts` (one list item per row) with the history column on the right.
+
+    `session` is the Claude session id; it only filters when
+    CLAUDE_HISTORY_SCOPE=session.
+    """
     while lefts and not lefts[-1]:
         lefts.pop()
     if not lefts:
@@ -514,7 +574,8 @@ def render_statusline(lefts, project):
     limit = max(16, min(45, width // 3))
     lefts = [middle_elide(left, limit) for left in lefts]
 
-    entries = collect(project, rows * 2)
+    scoped = session if SCOPE == "session" and session else None
+    entries = collect(project, rows * 2, scoped)
     if not entries:
         print("\n".join(lefts))
         return
