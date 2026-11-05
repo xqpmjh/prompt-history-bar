@@ -192,6 +192,16 @@ claude plugin validate .
 The tests use a throwaway HOME and cover rendering, language labels, paste
 privacy, install, reinstall, force replacement, uninstall, and syntax.
 
+To build a package for skill hubs (ModelScope Skills and any hub using the
+Agent Skills layout):
+
+```bash
+bash package-skill.sh        # dist/prompt-history-bar-<version>.zip
+```
+
+The zip puts `SKILL.md` at its root and takes its version from
+`.claude-plugin/plugin.json`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
