@@ -100,6 +100,12 @@ for line in sys.stdin.read().splitlines():
 check "english labels by default" 'printf "%s" "$OUT" | grep -Eq " · (now|[0-9]+m|[0-9]+h|[0-9]+d)"'
 check "chinese labels with CLAUDE_HISTORY_LANG=zh" 'printf "%s" "$SAMPLE" | CLAUDE_HISTORY_WIDTH=100 CLAUDE_HISTORY_LANG=zh python3 "$SCRIPTS/statusline.py" | grep -q "刚刚"'
 
+# A long path is shown whole when the pane has room, and elided otherwise.
+LONG_DIR="$PROJ/aaaaaaaaaa/bbbbbbbbbb/cccccccccc/dddddddddd/eeeeeeeeee"
+LONG_SAMPLE="$(python3 -c 'import json,sys; print(json.dumps({"model":{"display_name":"Claude"},"workspace":{"current_dir":sys.argv[1]}}))' "$LONG_DIR")"
+check "a long path is not elided when the pane is wide" 'printf "%s" "$LONG_SAMPLE" | CLAUDE_HISTORY_WIDTH=260 python3 "$SCRIPTS/statusline.py" | grep -qF "$LONG_DIR"'
+check "a long path is elided when the pane is narrower than the path" '! printf "%s" "$LONG_SAMPLE" | CLAUDE_HISTORY_WIDTH=50 python3 "$SCRIPTS/statusline.py" | grep -qF "$LONG_DIR"'
+
 # Paste preview is opt-in.
 PLAIN_OUT="$(printf '%s' "$SAMPLE" | CLAUDE_HISTORY_WIDTH=160 python3 "$SCRIPTS/statusline.py")"
 check "paste preview is off by default" 'printf "%s" "$PLAIN_OUT" | grep -q "\[paste\]" && ! printf "%s" "$PLAIN_OUT" | grep -q "secret first line"'

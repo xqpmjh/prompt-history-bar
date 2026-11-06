@@ -570,12 +570,21 @@ def render_statusline(lefts, project, session=None):
 
     rows = len(lefts)
     width = pane_width()
-    # Left column takes at most a third of the pane, capped at 45 cells.
-    limit = max(16, min(45, width // 3))
-    lefts = [middle_elide(left, limit) for left in lefts]
-
     scoped = session if SCOPE == "session" and session else None
     entries = collect(project, rows * 2, scoped)
+    # Left rows are elided only when they would squeeze the history column
+    # below a readable minimum. The floor is a third of the pane (16..45
+    # cells), so narrow panes behave as before.
+    floor = max(16, min(45, width // 3))
+    if entries:
+        ncols = 2 if len(entries) > rows else 1
+        reserve = ncols * MIN_TWO_COL + (ncols - 1) * COL_GAP
+    else:
+        reserve = 0
+    natural = max(text_width(left) for left in lefts)
+    limit = max(floor, min(natural, width - LEFT_GAP - reserve))
+    lefts = [middle_elide(left, limit) for left in lefts]
+
     if not entries:
         print("\n".join(lefts))
         return
