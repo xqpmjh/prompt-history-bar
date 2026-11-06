@@ -48,6 +48,9 @@ bash ~/.claude/skills/prompt-history-bar/scripts/install.sh --dry-run
 bash ~/.claude/skills/prompt-history-bar/scripts/install.sh
 ```
 
+`install.sh` is a wrapper around `install.py`; both do the same thing, and the
+`.py` one is what to use if a distribution channel does not ship shell scripts.
+
 The installer copies the runtime to `~/.claude/statusline/prompt-history-bar/`
 and adds a `statusLine` entry to `~/.claude/settings.json`. It backs up the
 settings file, validates the result, and refuses to overwrite a different
@@ -165,17 +168,18 @@ left column alone rather than overflowing.
 
 ## Uninstall
 
-The installer leaves a self-contained uninstaller in the runtime directory:
+The installer leaves a self-contained installer in the runtime directory:
 
 ```bash
-bash ~/.claude/statusline/prompt-history-bar/uninstall.sh
-bash ~/.claude/statusline/prompt-history-bar/uninstall.sh --purge
+python3 ~/.claude/statusline/prompt-history-bar/install.py --uninstall
+python3 ~/.claude/statusline/prompt-history-bar/install.py --uninstall --purge
 ```
 
-Or, if the skill is still installed:
+`uninstall.sh` in the same directory does the same thing. Or, if the skill is
+still installed:
 
 ```bash
-bash ~/.claude/skills/prompt-history-bar/scripts/uninstall.sh --purge
+python3 ~/.claude/skills/prompt-history-bar/scripts/install.py --uninstall --purge
 ```
 
 The uninstaller removes only the `statusLine` entry it installed, backs up the
@@ -226,6 +230,9 @@ cp -R prompt-history-bar/skills/prompt-history-bar ~/.claude/skills/
 bash ~/.claude/skills/prompt-history-bar/scripts/install.sh --dry-run
 bash ~/.claude/skills/prompt-history-bar/scripts/install.sh --lang zh
 ```
+
+`install.sh` 只是 `install.py` 的包装；某些分发渠道不带 `.sh` 文件，这时直接用
+`python3 .../scripts/install.py` 一样可以。
 
 安装脚本会先备份 `~/.claude/settings.json`，只改 `statusLine` 一个键。
 默认不读粘贴内容；需要显示粘贴首行时加 `--paste`。装完开新会话生效。

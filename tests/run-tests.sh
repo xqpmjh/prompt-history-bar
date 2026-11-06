@@ -405,8 +405,34 @@ assert d[\"permissions\"][\"allow\"]==[\"Bash(ls:*)\"]
 " "$CONFIG/settings.json"'
 check "uninstall --purge removes the runtime copy" '[ ! -e "$CONFIG/statusline/prompt-history-bar" ]'
 
+# --- installer without the shell wrappers -------------------------------------
+# Some distribution channels (ModelScope's npx install among them) drop *.sh
+# files, so install.py has to work on its own.
+NOSH="$WORK/nosh/scripts"
+mkdir -p "$NOSH"
+cp "$SCRIPTS"/*.py "$NOSH/"
+printf '{"model": "sonnet"}\n' > "$CONFIG/settings.json"
+CLAUDE_CONFIG_DIR="$CONFIG" python3 "$NOSH/install.py" --lang zh --paste >/dev/null
+check "install.py works without the shell wrappers" 'python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+c=d[\"statusLine\"][\"command\"]
+assert \"CLAUDE_HISTORY_LANG=zh\" in c and \"CLAUDE_HISTORY_PASTE=1\" in c
+assert d[\"model\"]==\"sonnet\"
+" "$CONFIG/settings.json"'
+check "install.py copies the runtime" '[ -f "$CONFIG/statusline/prompt-history-bar/install.py" ]'
+check "install.py rejects --refresh 0" '! python3 "$NOSH/install.py" --dry-run --refresh 0 >/dev/null 2>&1'
+CLAUDE_CONFIG_DIR="$CONFIG" python3 "$CONFIG/statusline/prompt-history-bar/install.py" --uninstall --purge >/dev/null
+check "install.py --uninstall --purge from the runtime copy" '[ ! -e "$CONFIG/statusline/prompt-history-bar" ]'
+check "install.py --uninstall removes statusLine" 'python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert \"statusLine\" not in d
+assert d[\"model\"]==\"sonnet\"
+" "$CONFIG/settings.json"'
+
 # --- syntax -------------------------------------------------------------------
-check "python files compile" 'python3 -m py_compile "$SCRIPTS/statusline.py" "$SCRIPTS/history_bar.py" "$SCRIPTS/settings_helper.py"'
+check "python files compile" 'python3 -m py_compile "$SCRIPTS/statusline.py" "$SCRIPTS/history_bar.py" "$SCRIPTS/settings_helper.py" "$SCRIPTS/install.py"'
 check "shell files parse" 'bash -n "$SCRIPTS/install.sh" && bash -n "$SCRIPTS/uninstall.sh" && bash -n "$ROOT/tests/run-tests.sh"'
 
 printf '\n%d passed, %d failed (work dir: %s)\n' "$pass" "$fail" "$WORK"

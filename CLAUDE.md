@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Prompt History Bar adds a right-side column of recent prompts to the Claude Code status line. This repository is the only place the feature is developed. The copy under `~/.claude/statusline/prompt-history-bar/` is a runtime install that `install.sh` copies verbatim; never edit it by hand.
+Prompt History Bar adds a right-side column of recent prompts to the Claude Code status line. This repository is the only place the feature is developed. The copy under `~/.claude/statusline/prompt-history-bar/` is a runtime install that `install.py` copies verbatim; never edit it by hand.
 
 ## Commands
 
@@ -20,14 +20,14 @@ claude plugin validate .       # manifest/skill check; passes today
   ```
 
   `CLAUDE_HISTORY_WIDTH` pins the width; `DEBUG=1` logs the width source and re-raises render exceptions instead of falling back.
-- Syntax gates live inside the suite: `python3 -m py_compile` on the three Python files and `bash -n` on `install.sh`, `uninstall.sh`, and `tests/run-tests.sh`.
+- Syntax gates live inside the suite: `python3 -m py_compile` on the four Python files and `bash -n` on `install.sh`, `uninstall.sh`, and `tests/run-tests.sh`.
 - `claude plugin validate . --strict` currently fails on a warning that a root `CLAUDE.md` is not recognised as plugin content (it is developer context). Use non-strict validation unless the packaging decision changes.
 
 ## Architecture
 
 Two entry points, one renderer, one settings writer.
 
-`statusline.py` is what Claude Code runs on every refresh: stdin JSON → `build_left` → `history_bar.render_statusline` → stdout. `history_bar.py` also runs standalone as a one-line tmux status bar (`history_bar.py <dir> [count]`, with `#` escaped). `install.sh` and `uninstall.sh` are the only things that write installation state: `install.sh` copies the four scripts into `$CLAUDE_CONFIG_DIR/statusline/prompt-history-bar/` and has `settings_helper.py` put the command into `settings.json`; `uninstall.sh` removes it through the same helper.
+`statusline.py` is what Claude Code runs on every refresh: stdin JSON → `build_left` → `history_bar.render_statusline` → stdout. `history_bar.py` also runs standalone as a one-line tmux status bar (`history_bar.py <dir> [count]`, with `#` escaped). `install.py` is the only thing that writes installation state: it copies the runtime scripts into `$CLAUDE_CONFIG_DIR/statusline/prompt-history-bar/` and has `settings_helper.py` put the command into `settings.json` (`--uninstall` removes it through the same helper). `install.sh` and `uninstall.sh` are three-line wrappers around it, kept because some install channels ship shell scripts and some do not; ModelScope's `npx skills add` drops `*.sh`, which is why the logic lives in Python.
 
 Invariants worth preserving:
 
@@ -40,7 +40,7 @@ Invariants worth preserving:
 
 Layout: the left column is capped at `max(16, min(45, width // 3))`. The history column is right-aligned to the pane edge, uses two columns only when there are more entries than left rows and each column is at least 32 cells (max 60, gap 6), then one column, then the left rows alone below 12 cells. When the two-column layout is rejected, the one-column fallback keeps the newest entries.
 
-`settings_helper.py` splices only the `statusLine` key in the raw text so the user's formatting survives, re-parses the result, and refuses to write if any other key changed. It backs up to `settings.json.bak.<stamp>` and is idempotent when the command is unchanged. Exit codes: 2 usage, 3 conflict (needs `--force`), 4 invalid settings. `uninstall.sh` removes only that key; `--purge` sends the runtime copy to `trash` when available.
+`settings_helper.py` splices only the `statusLine` key in the raw text so the user's formatting survives, re-parses the result, and refuses to write if any other key changed. It backs up to `settings.json.bak.<stamp>` and is idempotent when the command is unchanged. Exit codes: 2 usage, 3 conflict (needs `--force`), 4 invalid settings. `install.py --uninstall` removes only that key; `--purge` sends the runtime copy to `trash` when available.
 
 ## Docs that restate behavior
 
@@ -48,7 +48,7 @@ Layout: the left column is capped at `max(16, min(45, width // 3))`. The history
 
 ## After every change to the runtime scripts: remind the user to reinstall
 
-The status line runs the installed copy, so an edit in this repository has no effect until the user reinstalls. After any change to `statusline.py`, `history_bar.py`, `settings_helper.py` or `uninstall.sh`, end the reply with this reminder (the sandbox cannot write to `~/.claude/statusline/`, so the user runs it with the `!` prefix):
+The status line runs the installed copy, so an edit in this repository has no effect until the user reinstalls. After any change to `statusline.py`, `history_bar.py`, `settings_helper.py`, `install.py`, `install.sh` or `uninstall.sh`, end the reply with this reminder (the sandbox cannot write to `~/.claude/statusline/`, so the user runs it with the `!` prefix):
 
 ```
 ! bash <repo>/skills/prompt-history-bar/scripts/install.sh --lang zh --paste --session --refresh 10

@@ -20,11 +20,15 @@ installer from the skill directory:
 
 ```bash
 # Personal skill
-bash ~/.claude/skills/prompt-history-bar/scripts/install.sh
+python3 ~/.claude/skills/prompt-history-bar/scripts/install.py
 
 # Plugin (the variable is expanded in skill content)
-bash ${CLAUDE_PLUGIN_ROOT}/skills/prompt-history-bar/scripts/install.sh
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/prompt-history-bar/scripts/install.py
 ```
+
+`install.py` is the installer. `install.sh` and `uninstall.sh` are thin wrappers
+that call it, kept for compatibility; some install channels drop shell scripts,
+so prefer the `.py` paths when both exist.
 
 The installer copies the runtime to `<config>/statusline/prompt-history-bar/`
 and adds or replaces the `statusLine` key in `<config>/settings.json`.
@@ -33,7 +37,7 @@ and adds or replaces the `statusLine` key in `<config>/settings.json`.
 the exact command first, preferably with `--dry-run`:
 
 ```bash
-bash .../install.sh --dry-run --lang en
+python3 .../install.py --dry-run --lang en
 ```
 
 Then run it after they agree.
@@ -102,8 +106,9 @@ running elsewhere.
   and a paste whose first line is a shell prompt stays `[paste]` even with the
   preview on.
 - **Uninstall.** Run
-  `~/.claude/statusline/prompt-history-bar/uninstall.sh [--purge]`, or
-  `install.sh --uninstall --purge` from the skill directory.
+  `python3 ~/.claude/statusline/prompt-history-bar/install.py --uninstall [--purge]`,
+  or `install.py --uninstall --purge` from the skill directory. The
+  `uninstall.sh` wrapper in either directory does the same thing.
 
 ## Privacy
 
